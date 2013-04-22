@@ -454,7 +454,7 @@ def login_user(user, remember=False, force=False):
     if remember:
         session["remember"] = "set"
     current_app.login_manager.reload_user()
-    user_logged_in.send(current_app._get_current_object(), user=_get_user())
+    user_logged_in.send(current_app._get_current_object(), user=user)
     return True
 
 
