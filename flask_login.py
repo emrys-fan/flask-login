@@ -333,7 +333,7 @@ class LoginManager(object):
         # If a remember cookie is set, and the session is not, move the
         # cookie user ID to the session.
         cookie_name = config.get("REMEMBER_COOKIE_NAME", COOKIE_NAME)
-        if cookie_name in request.cookies and "user_id" not in session:
+        if cookie_name in request.cookies and "session_id" not in session:
             self._load_from_cookie(request.cookies[cookie_name])
         else:
             self.reload_user()
@@ -360,11 +360,11 @@ class LoginManager(object):
 
     def reload_user(self):
         ctx = _request_ctx_stack.top
-        user_id = session.get("user_id", None)
-        if user_id is None:
+        session_id = session.get("session_id", None)
+        if session_id is None:
             ctx.user = self.anonymous_user()
         else:
-            user = self.user_callback(user_id)
+            user = self.user_callback(session_id)
             if user is None:
                 logout_user()
             else:
@@ -374,12 +374,12 @@ class LoginManager(object):
         if self.token_callback:
             user = self.token_callback(cookie)
             if user is not None:
-                user_id = user.get_id()
+                session_id = user.get_session_id()
         else:
-            user_id = decode_cookie(cookie)
+            session_id = decode_cookie(cookie)
 
-        if user_id is not None:
-            session["user_id"] = user_id
+        if session_id is not None:
+            session["session_id"] = session_id
             session["_fresh"] = False
             self.reload_user()
 
@@ -390,7 +390,7 @@ class LoginManager(object):
 
     def _update_remember_cookie(self, response):
         operation = session.pop("remember", None)
-        if operation == "set" and "user_id" in session:
+        if operation == "set" and "session_id" in session:
             self._set_cookie(response)
         elif operation == "clear":
             self._clear_cookie(response)
@@ -406,7 +406,7 @@ class LoginManager(object):
         if self.token_callback:
             data = current_user.get_auth_token()
         else:
-            data = encode_cookie(str(session["user_id"]))
+            data = encode_cookie(str(session["session_id"]))
         expires = datetime.utcnow() + duration
         # actually set it
         response.set_cookie(cookie_name, data, expires=expires, domain=domain)
@@ -448,8 +448,8 @@ def login_user(user, remember=False, force=False):
     """
     if (not force) and (not user.is_active()):
         return False
-    user_id = user.get_id()
-    session["user_id"] = user_id
+    session_id = user.get_session_id()
+    session["session_id"] = session_id
     session["_fresh"] = True
     if remember:
         session["remember"] = "set"
@@ -463,8 +463,8 @@ def logout_user():
     Logs a user out. (You do not need to pass the actual user.) This will
     also clean up the remember me cookie if it exists.
     """
-    if "user_id" in session:
-        del session["user_id"]
+    if "session_id" in session:
+        del session["session_id"]
     if "_fresh" in session:
         del session["_fresh"]
     cookie_name = current_app.config.get("REMEMBER_COOKIE_NAME", COOKIE_NAME)
@@ -582,17 +582,27 @@ class UserMixin(object):
         except AttributeError:
             raise NotImplementedError("No `id` attribute - override get_id")
 
+    def get_session_id(self):
+        """
+        Assuming that the user object has an `session_id` attribute, this will take
+        that and convert it to `unicode`.
+        """
+        try:
+            return unicode(self.session_id)
+        except AttributeError:
+            raise NotImplementedError("No 'session_id' attribute")
+
     def __eq__(self, other):
         """
-        Checks the equality of two `UserMixin` objects using `get_id`.
+        Checks the equality of two `UserMixin` objects using `get_session_id`.
         """
         if isinstance(other, UserMixin):
-            return self.get_id() == other.get_id()
+            return self.get_session_id() == other.get_session_id()
         return NotImplemented
 
     def __ne__(self, other):
         """
-        Checks the inequality of two `UserMixin` objects using `get_id`.
+        Checks the inequality of two `UserMixin` objects using `get_session_id`.
         """
         equal = self.__eq__(other)
         if equal is NotImplemented:
@@ -614,6 +624,9 @@ class AnonymousUser(object):
         return True
 
     def get_id(self):
+        return None
+
+    def get_session_id(self):
         return None
 
 
